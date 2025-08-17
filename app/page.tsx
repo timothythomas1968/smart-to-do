@@ -272,8 +272,8 @@ export default function HomePage() {
         </div>
 
         <div className="max-w-4xl mx-auto mb-4">
-          {!isLoadingProjects && projects.length > 0 && (
-            <div className="flex justify-center items-center gap-4">
+          <div className="flex justify-center items-center gap-4">
+            {!isLoadingProjects && projects.length > 0 && (
               <div className="flex-shrink-0">
                 <ProjectSelector
                   currentProject={currentProject}
@@ -282,27 +282,31 @@ export default function HomePage() {
                   onCreateProject={handleCreateProject}
                 />
               </div>
-              <div className="flex gap-2 flex-shrink-0">
-                <div className="relative">
-                  <SettingsMenu
-                    onBackgroundChange={handleBackgroundChange}
-                    onOpacityChange={handleOpacityChange}
-                    currentOpacity={foregroundOpacity}
-                    userId={user?.id}
-                    onTasksChange={handleTaskAdded}
-                    onProjectsChange={handleProjectsChange}
-                    currentProject={currentProject}
-                  />
-                </div>
-                <div className="relative">
-                  <HelpMenu />
-                </div>
-                <div className="relative">
-                  <AuthMenu user={user} />
-                </div>
+            )}
+            <div className="flex gap-2 flex-shrink-0">
+              {!isLoadingProjects && projects.length > 0 && (
+                <>
+                  <div className="relative">
+                    <SettingsMenu
+                      onBackgroundChange={handleBackgroundChange}
+                      onOpacityChange={handleOpacityChange}
+                      currentOpacity={foregroundOpacity}
+                      userId={user?.id}
+                      onTasksChange={handleTaskAdded}
+                      onProjectsChange={handleProjectsChange}
+                      currentProject={currentProject}
+                    />
+                  </div>
+                  <div className="relative">
+                    <HelpMenu />
+                  </div>
+                </>
+              )}
+              <div className="relative">
+                <AuthMenu user={user} />
               </div>
             </div>
-          )}
+          </div>
         </div>
 
         <div className="max-w-4xl mx-auto space-y-8">
