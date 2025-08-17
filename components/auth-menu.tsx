@@ -55,10 +55,10 @@ export default function AuthMenu({ user }: AuthMenuProps) {
       <DropdownMenuTrigger asChild>
         <Button
           variant="outline"
-          size="icon"
-          className="bg-white/80 backdrop-blur-sm border-white/20 hover:bg-accent hover:text-accent-foreground"
+          className="bg-white/80 backdrop-blur-sm border-white/20 hover:bg-accent hover:text-accent-foreground px-4 py-2 h-auto"
         >
-          <User className="h-4 w-4" />
+          <User className="h-4 w-4 mr-2" />
+          Sign Out
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">

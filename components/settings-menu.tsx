@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -52,10 +51,17 @@ import type { ParsedTask, Project, ProjectSettings, EmailTemplate } from "@/lib/
 import { getDefaultEmailTemplates } from "@/lib/email-service"
 import ProjectManagement from "@/components/project-management"
 
+interface CSVTask {
+  originalText: string
+  parsed: ParsedTask
+  isValid: boolean
+  error?: string
+}
+
 interface SettingsMenuProps {
   onBackgroundChange?: (backgroundUrl: string | null) => void
   onOpacityChange?: (opacity: number) => void
-  currentOpacity?: number
+  currentOpacity: number
   userId?: string
   onTasksChange?: () => void
   onProjectsChange?: () => void
@@ -232,21 +238,49 @@ export default function SettingsMenu({
           onOpacityChange?.(50)
         }
       } else {
-        const { data, error } = await supabase.from("projects").select("settings").eq("id", currentProject.id).single()
+        try {
+          const { data, error } = await supabase
+            .from("projects")
+            .select("settings")
+            .eq("id", currentProject.id)
+            .single()
 
-        if (error) throw error
+          if (error) throw error
 
-        if (data?.settings) {
-          const settings = data.settings as ProjectSettings
-          setBackgroundUrl(settings.background_image_url || null)
-          setOpacity(settings.background_opacity)
-          setDefaultDueDays(settings.default_due_days || 5)
-          onBackgroundChange?.(settings.background_image_url || null)
-          onOpacityChange?.(settings.background_opacity)
+          if (data?.settings) {
+            const settings = data.settings as ProjectSettings
+            setBackgroundUrl(settings.background_image_url || null)
+            setOpacity(settings.background_opacity)
+            setDefaultDueDays(settings.default_due_days || 5)
+            onBackgroundChange?.(settings.background_image_url || null)
+            onOpacityChange?.(settings.background_opacity)
+          }
+        } catch (dbError: any) {
+          // Handle missing projects table gracefully
+          if (
+            dbError?.message?.includes("Could not find the table") ||
+            dbError?.message?.includes("relation") ||
+            dbError?.code === "PGRST116"
+          ) {
+            console.log("[v0] Projects table not available for settings, using defaults")
+            // Use default settings when database table doesn't exist
+            setBackgroundUrl(null)
+            setOpacity(50)
+            setDefaultDueDays(5)
+            onBackgroundChange?.(null)
+            onOpacityChange?.(50)
+          } else {
+            throw dbError // Re-throw other errors
+          }
         }
       }
     } catch (error) {
       console.error("Error loading project settings:", error)
+      setBackgroundUrl(null)
+      setOpacity(50)
+      setDefaultDueDays(5)
+      onBackgroundChange?.(null)
+      onOpacityChange?.(50)
     }
   }
 
@@ -267,7 +301,17 @@ export default function SettingsMenu({
       } else {
         const { error } = await supabase.from("projects").update({ settings }).eq("id", currentProject.id)
 
-        if (error) throw error
+        if (error) {
+          // Check if it's a table not found error
+          if (error.message?.includes("Could not find the table") || error.message?.includes("schema cache")) {
+            console.log("[v0] Projects table not available for saving settings, using localStorage fallback")
+            // Fall back to localStorage for authenticated users when database table doesn't exist
+            const projectSettingsKey = `projectSettings_${currentProject.id}`
+            localStorage.setItem(projectSettingsKey, JSON.stringify(settings))
+            return
+          }
+          throw error
+        }
       }
     } catch (error) {
       console.error("Error saving project settings:", error)
@@ -1120,11 +1164,4 @@ export default function SettingsMenu({
       )}
     </>
   )
-}
-
-interface CSVTask {
-  originalText: string
-  parsed: ParsedTask
-  isValid: boolean
-  error?: string
 }

@@ -43,20 +43,44 @@ export default function HomePage() {
           return
         }
 
-        const { data } = await supabaseClient.auth.getUser()
-        setUser(data.user)
-        console.log("[v0] User loaded:", data.user ? "authenticated" : "guest mode")
+        const {
+          data: { session },
+          error,
+        } = await supabaseClient.auth.getSession()
+        if (error) {
+          console.log("[v0] Session error:", error.message)
+          setUser(null)
+        } else if (session?.user) {
+          console.log("[v0] User loaded: authenticated -", session.user.email)
+          console.log("[v0] User ID:", session.user.id)
+          setUser(session.user)
+        } else {
+          console.log("[v0] No userId provided, running in guest mode")
+          setUser(null)
+        }
 
         const {
           data: { subscription },
-        } = supabaseClient.auth.onAuthStateChange((event, session) => {
-          console.log("[v0] Auth state changed:", event, session?.user ? "authenticated" : "guest")
-          setUser(session?.user || null)
+        } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
+          console.log(
+            "[v0] Auth state changed:",
+            event,
+            session?.user ? `authenticated - ${session.user.email}` : "guest",
+          )
+          if (session?.user) {
+            console.log("[v0] Auth state user ID:", session.user.id)
+            setUser(session.user)
+            // Force refresh of projects and tasks when user signs in
+            setRefreshKey((prev) => prev + 1)
+          } else {
+            console.log("[v0] User signed out or session ended")
+            setUser(null)
+          }
         })
 
         return () => subscription.unsubscribe()
       } catch (error) {
-        console.log("[v0] No authentication available, using guest mode")
+        console.log("[v0] Authentication initialization error:", error)
         setUser(null)
       }
     }
@@ -103,22 +127,64 @@ export default function HomePage() {
       const supabaseClient = createClient()
       if (!supabaseClient) return
 
-      const { data, error } = await supabaseClient
-        .from("projects")
-        .select("*")
-        .eq("user_id", user.id)
-        .order("is_default", { ascending: false })
-        .order("created_at", { ascending: true })
+      try {
+        const { data, error } = await supabaseClient
+          .from("projects")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("is_default", { ascending: false })
+          .order("created_at", { ascending: true })
 
-      if (error) throw error
+        if (error) throw error
 
-      if (data && data.length > 0) {
-        setProjects(data)
-        const defaultProject = data.find((p) => p.is_default) || data[0]
+        if (data && data.length > 0) {
+          setProjects(data)
+          const defaultProject = data.find((p) => p.is_default) || data[0]
+          setCurrentProject(defaultProject)
+        } else {
+          // No projects found, create default project
+          const defaultProject = {
+            id: "default",
+            name: "Default List",
+            description: "General tasks and reminders",
+            color: "#10b981",
+            is_default: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            user_id: user.id,
+          }
+          setProjects([defaultProject])
+          setCurrentProject(defaultProject)
+        }
+      } catch (dbError: any) {
+        console.log("[v0] Database table not found, using fallback projects:", dbError.message)
+        const defaultProject = {
+          id: "default",
+          name: "Default List",
+          description: "General tasks and reminders",
+          color: "#10b981",
+          is_default: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          user_id: user.id,
+        }
+        setProjects([defaultProject])
         setCurrentProject(defaultProject)
       }
     } catch (error) {
       console.error("Error loading projects:", error)
+      const fallbackProject = {
+        id: "fallback",
+        name: "My Tasks",
+        description: "Default task list",
+        color: "#10b981",
+        is_default: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        user_id: user?.id || "guest",
+      }
+      setProjects([fallbackProject])
+      setCurrentProject(fallbackProject)
     } finally {
       setIsLoadingProjects(false)
     }
@@ -150,25 +216,33 @@ export default function HomePage() {
         const supabaseClient = createClient()
         if (!supabaseClient) return
 
-        const { data, error } = await supabaseClient
-          .from("projects")
-          .select("settings")
-          .eq("id", currentProject.id)
-          .single()
+        try {
+          const { data, error } = await supabaseClient
+            .from("projects")
+            .select("settings")
+            .eq("id", currentProject.id)
+            .single()
 
-        if (error) throw error
+          if (error) throw error
 
-        if (data?.settings) {
-          const settings = data.settings
-          setBackgroundUrl(settings.background_image_url || null)
-          setForegroundOpacity(settings.background_opacity || 50)
-        } else {
+          if (data?.settings) {
+            const settings = data.settings
+            setBackgroundUrl(settings.background_image_url || null)
+            setForegroundOpacity(settings.background_opacity || 50)
+          } else {
+            setBackgroundUrl(null)
+            setForegroundOpacity(50)
+          }
+        } catch (dbError: any) {
+          console.log("[v0] Projects table not available for background settings, using defaults")
           setBackgroundUrl(null)
           setForegroundOpacity(50)
         }
       }
     } catch (error) {
       console.error("Error loading project background:", error)
+      setBackgroundUrl(null)
+      setForegroundOpacity(50)
     }
   }
 

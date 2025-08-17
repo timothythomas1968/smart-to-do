@@ -43,24 +43,19 @@ export async function signIn(prevState: any, formData: FormData) {
     },
   )
 
-  try {
-    console.log("[v0] Attempting Supabase sign-in for:", email)
-    const { error } = await supabase.auth.signInWithPassword({
-      email: email.toString(),
-      password: password.toString(),
-    })
+  console.log("[v0] Attempting Supabase sign-in for:", email)
+  const { error } = await supabase.auth.signInWithPassword({
+    email: email.toString(),
+    password: password.toString(),
+  })
 
-    if (error) {
-      console.log("[v0] Supabase sign-in error:", error.message)
-      return { error: error.message }
-    }
-
-    console.log("[v0] Sign-in successful")
-    return { success: true }
-  } catch (error) {
-    console.error("[v0] Login error:", error)
-    return { error: "An unexpected error occurred. Please try again." }
+  if (error) {
+    console.log("[v0] Supabase sign-in error:", error.message)
+    return { error: error.message }
   }
+
+  console.log("[v0] Sign-in successful")
+  redirect("/")
 }
 
 export async function signUp(prevState: any, formData: FormData) {
