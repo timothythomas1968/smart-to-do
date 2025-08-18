@@ -239,39 +239,37 @@ export default function SettingsMenu({
         }
       } else {
         try {
+          // Use user_settings table instead of projects table
           const { data, error } = await supabase
-            .from("projects")
-            .select("settings")
-            .eq("id", currentProject.id)
+            .from("user_settings")
+            .select("background_image_url, background_opacity")
+            .eq("user_id", userId)
             .single()
 
-          if (error) throw error
+          if (error && error.code !== "PGRST116") throw error
 
-          if (data?.settings) {
-            const settings = data.settings as ProjectSettings
-            setBackgroundUrl(settings.background_image_url || null)
-            setOpacity(settings.background_opacity)
-            setDefaultDueDays(settings.default_due_days || 5)
-            onBackgroundChange?.(settings.background_image_url || null)
-            onOpacityChange?.(settings.background_opacity)
-          }
-        } catch (dbError: any) {
-          // Handle missing projects table gracefully
-          if (
-            dbError?.message?.includes("Could not find the table") ||
-            dbError?.message?.includes("relation") ||
-            dbError?.code === "PGRST116"
-          ) {
-            console.log("[v0] Projects table not available for settings, using defaults")
-            // Use default settings when database table doesn't exist
+          if (data) {
+            setBackgroundUrl(data.background_image_url || null)
+            const opacityPercentage = data.background_opacity ? Math.round(data.background_opacity * 100) : 50
+            setOpacity(opacityPercentage)
+            setDefaultDueDays(5) // Default value since not stored in user_settings
+            onBackgroundChange?.(data.background_image_url || null)
+            onOpacityChange?.(opacityPercentage)
+          } else {
+            // No user settings found, use defaults
             setBackgroundUrl(null)
             setOpacity(50)
             setDefaultDueDays(5)
             onBackgroundChange?.(null)
             onOpacityChange?.(50)
-          } else {
-            throw dbError // Re-throw other errors
           }
+        } catch (dbError: any) {
+          console.log("[v0] User settings table not available, using defaults:", dbError.message)
+          setBackgroundUrl(null)
+          setOpacity(50)
+          setDefaultDueDays(5)
+          onBackgroundChange?.(null)
+          onOpacityChange?.(50)
         }
       }
     } catch (error) {
@@ -291,7 +289,7 @@ export default function SettingsMenu({
       background_image_url: newBackgroundUrl,
       background_opacity: newOpacity,
       task_view: "all",
-      default_due_days: defaultDueDays, // Include default due days in project settings
+      default_due_days: defaultDueDays,
     }
 
     try {
@@ -299,19 +297,26 @@ export default function SettingsMenu({
         const projectSettingsKey = `projectSettings_${currentProject.id}`
         localStorage.setItem(projectSettingsKey, JSON.stringify(settings))
       } else {
-        const { error } = await supabase.from("projects").update({ settings }).eq("id", currentProject.id)
+        const { error } = await supabase.from("user_settings").upsert(
+          {
+            user_id: userId,
+            background_image_url: newBackgroundUrl,
+            background_opacity: newOpacity / 100, // Convert percentage to decimal
+            updated_at: new Date().toISOString(),
+          },
+          {
+            onConflict: "user_id",
+          },
+        )
 
         if (error) {
-          // Check if it's a table not found error
-          if (error.message?.includes("Could not find the table") || error.message?.includes("schema cache")) {
-            console.log("[v0] Projects table not available for saving settings, using localStorage fallback")
-            // Fall back to localStorage for authenticated users when database table doesn't exist
-            const projectSettingsKey = `projectSettings_${currentProject.id}`
-            localStorage.setItem(projectSettingsKey, JSON.stringify(settings))
-            return
-          }
-          throw error
+          console.log("[v0] Error saving to user_settings, using localStorage fallback:", error.message)
+          const projectSettingsKey = `projectSettings_${currentProject.id}`
+          localStorage.setItem(projectSettingsKey, JSON.stringify(settings))
+          return
         }
+
+        console.log("[v0] Background settings saved to user_settings table")
       }
     } catch (error) {
       console.error("Error saving project settings:", error)
@@ -322,15 +327,20 @@ export default function SettingsMenu({
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!file.name.endsWith(".csv")) {
+    console.log("[v0] CSV file upload started:", file.name, "Size:", file.size)
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      console.log("[v0] CSV upload failed: Invalid file type")
       alert("Please select a CSV file")
       return
     }
 
     setIsProcessing(true)
     try {
+      console.log("[v0] Reading CSV file content...")
       const text = await file.text()
       const lines = text.split("\n").filter((line) => line.trim())
+      console.log("[v0] CSV file parsed into", lines.length, "lines")
 
       const startIndex =
         lines[0]?.toLowerCase().includes("task") ||
@@ -338,6 +348,8 @@ export default function SettingsMenu({
         lines[0]?.toLowerCase().includes("description")
           ? 1
           : 0
+
+      console.log("[v0] CSV header detection - starting from line", startIndex)
 
       const tasks: CSVTask[] = []
 
@@ -349,13 +361,16 @@ export default function SettingsMenu({
 
         if (taskText && taskText.length > 2) {
           try {
+            console.log("[v0] Parsing task:", taskText)
             const parsed = parseTaskFromNaturalLanguage(taskText)
+            console.log("[v0] Task parsed successfully:", parsed.title)
             tasks.push({
               originalText: taskText,
               parsed,
               isValid: true,
             })
           } catch (error) {
+            console.log("[v0] Task parsing failed:", taskText, error)
             tasks.push({
               originalText: taskText,
               parsed: {} as ParsedTask,
@@ -366,10 +381,14 @@ export default function SettingsMenu({
         }
       }
 
+      console.log("[v0] CSV processing complete:", tasks.length, "tasks processed")
+      console.log("[v0] Valid tasks:", tasks.filter((t) => t.isValid).length)
+      console.log("[v0] Invalid tasks:", tasks.filter((t) => !t.isValid).length)
+
       setCsvTasks(tasks)
       setShowImportDialog(true)
     } catch (error) {
-      console.error("Error processing CSV:", error)
+      console.error("[v0] Error processing CSV:", error)
       alert("Error processing CSV file. Please check the format.")
     } finally {
       setIsProcessing(false)
@@ -381,12 +400,21 @@ export default function SettingsMenu({
 
   const handleImport = async () => {
     const validTasks = csvTasks.filter((task) => task.isValid)
-    if (validTasks.length === 0) return
+    if (validTasks.length === 0) {
+      console.log("[v0] CSV import cancelled: No valid tasks to import")
+      return
+    }
+
+    console.log("[v0] Starting CSV import for", validTasks.length, "tasks")
+    console.log("[v0] User ID:", userId || "guest mode")
 
     setIsImporting(true)
     try {
       if (!userId) {
+        console.log("[v0] Importing to localStorage (guest mode)")
         const guestTasks = JSON.parse(localStorage.getItem("guestTasks") || "[]")
+        console.log("[v0] Current guest tasks:", guestTasks.length)
+
         const newTasks = validTasks.map((task) => ({
           id: Date.now().toString() + Math.random(),
           title: task.parsed.title,
@@ -400,9 +428,12 @@ export default function SettingsMenu({
           created_at: new Date().toISOString(),
           user_id: null,
         }))
+
         guestTasks.push(...newTasks)
         localStorage.setItem("guestTasks", JSON.stringify(guestTasks))
+        console.log("[v0] Guest tasks saved to localStorage:", guestTasks.length, "total tasks")
       } else {
+        console.log("[v0] Importing to database (authenticated user)")
         const tasksToInsert = validTasks.map((task) => ({
           title: task.parsed.title,
           description: task.parsed.description,
@@ -415,15 +446,21 @@ export default function SettingsMenu({
           user_id: userId,
         }))
 
+        console.log("[v0] Inserting tasks to database:", tasksToInsert)
         const { error } = await supabase.from("tasks").insert(tasksToInsert)
-        if (error) throw error
+        if (error) {
+          console.error("[v0] Database insert error:", error)
+          throw error
+        }
+        console.log("[v0] Tasks successfully inserted to database")
       }
 
+      console.log("[v0] CSV import completed successfully")
       setShowImportDialog(false)
       setCsvTasks([])
       onTasksChange?.()
     } catch (error) {
-      console.error("Error importing tasks:", error)
+      console.error("[v0] Error importing tasks:", error)
       alert("Error importing tasks. Please try again.")
     } finally {
       setIsImporting(false)

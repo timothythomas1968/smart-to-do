@@ -51,6 +51,7 @@ export default function BackgroundCustomizer({ onBackgroundChange }: BackgroundC
     "/soft-pastel-geometry.png",
     "/calming-watercolor-wash.png",
     "/warm-gradient-mesh.png",
+    "/green-fields-countryside.png",
   ]
 
   return (

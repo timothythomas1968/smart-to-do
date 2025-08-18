@@ -96,7 +96,7 @@ export default function TaskDashboard({
 
   const fetchTasks = async () => {
     try {
-      if (!userId) {
+      if (!userId || userId === "guest") {
         console.log("[v0] No userId provided, running in guest mode")
         const storedTasks = localStorage.getItem("guestTasks")
         if (storedTasks) {

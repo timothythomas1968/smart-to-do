@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import TaskInputSystem from "@/components/task-input-system"
@@ -10,7 +9,11 @@ import SettingsMenu from "@/components/settings-menu"
 import ProjectSelector from "@/components/project-selector"
 import HelpMenu from "@/components/help-menu"
 import AuthMenu from "@/components/auth-menu"
+import LoginForm from "@/components/login-form"
 import type { Project } from "@/lib/types"
+import { CheckSquare } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { toast } from "@/hooks/use-toast"
 
 export default function HomePage() {
   const [user, setUser] = useState<any>(null)
@@ -26,9 +29,11 @@ export default function HomePage() {
     description: "",
     color: "#10b981",
   })
+  const [isAuthLoading, setIsAuthLoading] = useState(true)
+  const [authScreen, setAuthScreen] = useState<"welcome" | "signin" | "signup">("welcome")
+  const [isGuestModeActive, setIsGuestModeActive] = useState(false)
 
   const handleProjectsChange = () => {
-    // Placeholder for handleProjectsChange logic
     console.log("Projects have changed")
   }
 
@@ -38,8 +43,9 @@ export default function HomePage() {
     const getUser = async () => {
       try {
         if (!supabaseClient) {
-          console.log("[v0] Supabase not available, using guest mode")
+          console.log("[v0] Supabase not available, showing welcome screen")
           setUser(null)
+          setIsAuthLoading(false)
           return
         }
 
@@ -55,9 +61,11 @@ export default function HomePage() {
           console.log("[v0] User ID:", session.user.id)
           setUser(session.user)
         } else {
-          console.log("[v0] No userId provided, running in guest mode")
+          console.log("[v0] No session found, showing welcome screen")
           setUser(null)
         }
+
+        setIsAuthLoading(false)
 
         const {
           data: { subscription },
@@ -70,11 +78,18 @@ export default function HomePage() {
           if (session?.user) {
             console.log("[v0] Auth state user ID:", session.user.id)
             setUser(session.user)
-            // Force refresh of projects and tasks when user signs in
             setRefreshKey((prev) => prev + 1)
-          } else {
+          } else if (event === "SIGNED_OUT") {
             console.log("[v0] User signed out or session ended")
-            setUser(null)
+            if (!isGuestModeActive) {
+              setUser((currentUser) => {
+                if (currentUser?.email === "guest") {
+                  console.log("[v0] Preserving guest mode user")
+                  return currentUser
+                }
+                return null
+              })
+            }
           }
         })
 
@@ -82,6 +97,7 @@ export default function HomePage() {
       } catch (error) {
         console.log("[v0] Authentication initialization error:", error)
         setUser(null)
+        setIsAuthLoading(false)
       }
     }
 
@@ -217,24 +233,30 @@ export default function HomePage() {
         if (!supabaseClient) return
 
         try {
+          // Load from user_settings table instead of projects table
           const { data, error } = await supabaseClient
-            .from("projects")
-            .select("settings")
-            .eq("id", currentProject.id)
+            .from("user_settings")
+            .select("background_image_url, background_opacity")
+            .eq("user_id", user.id)
             .single()
 
-          if (error) throw error
+          if (error && error.code !== "PGRST116") throw error
 
-          if (data?.settings) {
-            const settings = data.settings
-            setBackgroundUrl(settings.background_image_url || null)
-            setForegroundOpacity(settings.background_opacity || 50)
+          if (data) {
+            console.log("[v0] Loaded background settings from user_settings table")
+            setBackgroundUrl(data.background_image_url || null)
+            const opacityPercentage = data.background_opacity ? Math.round(data.background_opacity * 100) : 50
+            setForegroundOpacity(opacityPercentage)
           } else {
+            console.log("[v0] No user settings found, using defaults")
             setBackgroundUrl(null)
             setForegroundOpacity(50)
           }
         } catch (dbError: any) {
-          console.log("[v0] Projects table not available for background settings, using defaults")
+          console.log(
+            "[v0] User settings table not available for background settings, using defaults:",
+            dbError.message,
+          )
           setBackgroundUrl(null)
           setForegroundOpacity(50)
         }
@@ -314,6 +336,79 @@ export default function HomePage() {
     } catch (error) {
       console.error("Error creating project:", error)
     }
+  }
+
+  const handleGuestMode = () => {
+    console.log("[v0] Guest mode button clicked")
+    try {
+      setIsGuestModeActive(true)
+      setUser({ id: null, email: "guest" })
+      setIsAuthLoading(false)
+      setTimeout(() => {
+        toast({
+          title: "Guest Mode Active",
+          description: "Your tasks and settings will be stored locally on this device only.",
+        })
+        console.log("[v0] Guest mode toast triggered")
+        setIsGuestModeActive(false)
+      }, 100)
+    } catch (error) {
+      console.log("[v0] Error in handleGuestMode:", error)
+      setIsGuestModeActive(false)
+    }
+  }
+
+  if (isAuthLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600 mx-auto mb-4"></div>
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!user) {
+    if (authScreen === "signin") {
+      return (
+        <div
+          className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative"
+          style={{
+            backgroundImage: `url('/green-fields-countryside.png')`,
+          }}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div className="relative z-10 w-full max-w-md">
+            <LoginForm onBack={() => setAuthScreen("welcome")} />
+          </div>
+        </div>
+      )
+    }
+
+    if (authScreen === "signup") {
+      return (
+        <div
+          className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative"
+          style={{
+            backgroundImage: `url('/green-fields-countryside.png')`,
+          }}
+        >
+          <div className="absolute inset-0 bg-black/40"></div>
+          <div className="relative z-10 w-full max-w-md">
+            <LoginForm isSignUp={true} onBack={() => setAuthScreen("welcome")} />
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <WelcomeScreen
+        onGuestMode={handleGuestMode}
+        onSignIn={() => setAuthScreen("signin")}
+        onSignUp={() => setAuthScreen("signup")}
+      />
+    )
   }
 
   return (
@@ -476,6 +571,77 @@ export default function HomePage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function WelcomeScreen({
+  onGuestMode,
+  onSignIn,
+  onSignUp,
+}: {
+  onGuestMode: () => void
+  onSignIn: () => void
+  onSignUp: () => void
+}) {
+  const handleGuestClick = () => {
+    console.log("[v0] Continue as Guest button clicked in WelcomeScreen")
+    try {
+      onGuestMode()
+      console.log("[v0] onGuestMode function called successfully")
+    } catch (error) {
+      console.log("[v0] Error calling onGuestMode:", error)
+    }
+  }
+
+  return (
+    <div
+      className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative"
+      style={{
+        backgroundImage: `url('/green-fields-countryside.png')`,
+      }}
+    >
+      <div className="absolute inset-0 bg-black/40"></div>
+
+      <div className="relative z-10 w-full max-w-md space-y-8 bg-black/60 backdrop-blur-sm p-8 rounded-2xl border border-white/10">
+        <div className="space-y-4 text-center">
+          <div className="flex justify-center">
+            <div className="bg-[#2b725e] p-3 rounded-xl shadow-lg">
+              <CheckSquare className="h-8 w-8 text-white" />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-5xl font-bold tracking-tight text-white drop-shadow-lg">Smart Tasks</h1>
+            <p className="text-base text-gray-200 font-medium drop-shadow">from Theo Labs</p>
+            <p className="text-lg text-gray-100 mt-4 drop-shadow">Welcome! Choose how you'd like to continue</p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <Button
+            onClick={onSignIn}
+            className="w-full bg-[#2b725e] hover:bg-[#235e4c] text-white py-6 text-lg font-medium rounded-lg h-[60px]"
+          >
+            Sign In
+          </Button>
+
+          <Button
+            onClick={onSignUp}
+            variant="outline"
+            className="w-full border-white/30 text-gray-100 hover:bg-white/10 hover:text-white bg-white/5 backdrop-blur-sm py-6 text-lg font-medium rounded-lg h-[60px]"
+          >
+            Create Account
+          </Button>
+
+          <Button
+            onClick={handleGuestClick}
+            variant="ghost"
+            className="w-full text-gray-200 hover:bg-white/10 hover:text-white py-6 text-lg font-medium rounded-lg h-[60px]"
+          >
+            Continue as Guest
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

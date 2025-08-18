@@ -36,15 +36,21 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
     const file = event.target.files?.[0]
     if (!file) return
 
-    if (!file.name.endsWith(".csv")) {
+    console.log("[v0] CSV file upload started:", file.name, "Size:", file.size)
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      console.log("[v0] CSV upload failed: Invalid file type")
       alert("Please select a CSV file")
       return
     }
 
+    console.log("[v0] CSV file type validation passed")
     setIsProcessing(true)
     try {
+      console.log("[v0] Starting CSV text parsing")
       const text = await file.text()
       const lines = text.split("\n").filter((line) => line.trim())
+      console.log("[v0] CSV parsed into", lines.length, "lines")
 
       // Skip header if it looks like one
       const startIndex =
@@ -75,6 +81,7 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
               isValid: true,
             })
           } catch (error) {
+            console.log("[v0] Failed to parse task:", taskText, error)
             tasks.push({
               originalText: taskText,
               parsed: {} as ParsedTask,
@@ -85,10 +92,16 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
         }
       }
 
+      console.log(
+        "[v0] CSV processing complete. Valid tasks:",
+        tasks.filter((t) => t.isValid).length,
+        "Invalid tasks:",
+        tasks.filter((t) => !t.isValid).length,
+      )
       setCsvTasks(tasks)
       setIsOpen(true)
     } catch (error) {
-      console.error("Error processing CSV:", error)
+      console.error("[v0] Error processing CSV:", error)
       alert("Error processing CSV file. Please check the format.")
     } finally {
       setIsProcessing(false)
@@ -103,6 +116,7 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
     const validTasks = csvTasks.filter((task) => task.isValid)
     if (validTasks.length === 0) return
 
+    console.log("[v0] Starting CSV import for", validTasks.length, "tasks")
     setIsImporting(true)
     try {
       const tasksToInsert = validTasks.map((task) => ({
@@ -117,16 +131,21 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
         user_id: userId,
       }))
 
+      console.log("[v0] Inserting tasks into database:", tasksToInsert.length)
       const { error } = await supabase.from("tasks").insert(tasksToInsert)
 
-      if (error) throw error
+      if (error) {
+        console.log("[v0] Database insert error:", error)
+        throw error
+      }
 
+      console.log("[v0] CSV import successful")
       // Success
       setIsOpen(false)
       setCsvTasks([])
       onImportComplete()
     } catch (error) {
-      console.error("Error importing tasks:", error)
+      console.error("[v0] Error importing tasks:", error)
       alert("Error importing tasks. Please try again.")
     } finally {
       setIsImporting(false)
