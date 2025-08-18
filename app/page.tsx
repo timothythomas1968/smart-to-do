@@ -98,6 +98,13 @@ export default function HomePage() {
             return
           }
 
+          if (event === "TOKEN_REFRESH_FAILED") {
+            console.log("[v0] Token refresh failed, clearing session")
+            setUser(null)
+            setIsAuthLoading(false)
+            return
+          }
+
           if (session?.user) {
             console.log("[v0] Auth state user ID:", session.user.id)
             setUser(session.user)
