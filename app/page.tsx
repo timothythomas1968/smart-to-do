@@ -49,10 +49,26 @@ export default function HomePage() {
           return
         }
 
-        const {
-          data: { session },
-          error,
-        } = await supabaseClient.auth.getSession()
+        const retryGetSession = async (retries = 3) => {
+          for (let attempt = 1; attempt <= retries; attempt++) {
+            try {
+              const {
+                data: { session },
+                error,
+              } = await supabaseClient.auth.getSession()
+              return { session, error }
+            } catch (fetchError: any) {
+              console.log(`[v0] Session fetch attempt ${attempt} failed:`, fetchError.message)
+              if (attempt === retries || !fetchError.message?.includes("Failed to fetch")) {
+                throw fetchError
+              }
+              await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
+            }
+          }
+        }
+
+        const { session, error } = await retryGetSession()
+
         if (error) {
           console.log("[v0] Session error:", error.message)
           setUser(null)
@@ -75,6 +91,13 @@ export default function HomePage() {
             event,
             session?.user ? `authenticated - ${session.user.email}` : "guest",
           )
+
+          if (event === "TOKEN_REFRESHED" && session?.user) {
+            console.log("[v0] Token refreshed successfully")
+            setUser(session.user)
+            return
+          }
+
           if (session?.user) {
             console.log("[v0] Auth state user ID:", session.user.id)
             setUser(session.user)
@@ -94,9 +117,15 @@ export default function HomePage() {
         })
 
         return () => subscription.unsubscribe()
-      } catch (error) {
+      } catch (error: any) {
         console.log("[v0] Authentication initialization error:", error)
-        setUser(null)
+        if (error?.message?.includes("Failed to fetch")) {
+          console.log("[v0] Network connectivity issue during auth initialization")
+          // Still allow the app to load in a degraded state
+          setUser(null)
+        } else {
+          setUser(null)
+        }
         setIsAuthLoading(false)
       }
     }
@@ -423,6 +452,7 @@ export default function HomePage() {
                 backgroundSize: "cover",
                 backgroundPosition: "center",
                 backgroundRepeat: "no-repeat",
+                backgroundAttachment: "fixed",
               }
           : {}),
       }}

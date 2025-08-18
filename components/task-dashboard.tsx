@@ -95,6 +95,7 @@ export default function TaskDashboard({
   }, [userId, currentProject])
 
   const fetchTasks = async () => {
+    console.log("[v0] fetchTasks called - userId:", userId, "currentProject:", currentProject?.name || "none")
     try {
       if (!userId || userId === "guest") {
         console.log("[v0] No userId provided, running in guest mode")
@@ -121,18 +122,38 @@ export default function TaskDashboard({
         return
       }
 
+      console.log("[v0] Fetching tasks from database for authenticated user")
       let query = supabase.from("tasks").select("*").eq("user_id", userId)
 
       if (currentProject) {
-        query = query.eq("project_id", currentProject.id)
+        console.log("[v0] Filtering tasks for project:", currentProject.name, "ID:", currentProject.id)
+        if (
+          currentProject.id === "default" ||
+          currentProject.name === "Default" ||
+          currentProject.name === "Default List"
+        ) {
+          // For default project, include both legacy "default" string and proper UUID
+          query = query.or(`project_id.eq.default,project_id.eq.${currentProject.id}`)
+        } else {
+          query = query.eq("project_id", currentProject.id)
+        }
+      } else {
+        console.log("[v0] No project filter applied, fetching all user tasks")
       }
 
+      console.log("[v0] Executing database query...")
       const { data, error } = await query.order("created_at", { ascending: false })
 
-      if (error) throw error
+      if (error) {
+        console.error("[v0] Database error fetching tasks:", error)
+        throw error
+      }
+
+      console.log("[v0] Database query successful, tasks found:", data?.length || 0)
+      console.log("[v0] Task data:", data)
       setTasks(data || [])
     } catch (error) {
-      console.error("Error fetching tasks:", error)
+      console.error("[v0] Error fetching tasks:", error)
       setTasks([])
     } finally {
       setIsLoading(false)
@@ -576,7 +597,7 @@ export default function TaskDashboard({
                 <th className="text-left p-3 w-12"></th>
                 <th className="text-left p-3 w-12"></th>
                 <th className="text-left p-3 w-12"></th>
-                <th className="text-left p-3">
+                <th className="text-left p-3 min-w-[300px]">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -586,7 +607,7 @@ export default function TaskDashboard({
                     Task {getSortIcon("title")}
                   </Button>
                 </th>
-                <th className="text-left p-3">
+                <th className="text-left p-3 w-24">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -596,7 +617,7 @@ export default function TaskDashboard({
                     Priority {getSortIcon("priority")}
                   </Button>
                 </th>
-                <th className="text-left p-3">
+                <th className="text-left p-3 w-28">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -606,9 +627,9 @@ export default function TaskDashboard({
                     Due Date {getSortIcon("due_date")}
                   </Button>
                 </th>
-                <th className="text-left p-3">Owner</th>
-                <th className="text-left p-3">Subject</th>
-                <th className="text-left p-3">
+                <th className="text-left p-3 w-24">Owner</th>
+                <th className="text-left p-3 w-24">Subject</th>
+                <th className="text-left p-3 w-28">
                   <Button
                     variant="ghost"
                     size="sm"
@@ -669,7 +690,7 @@ export default function TaskDashboard({
                       <Edit className="h-4 w-4" />
                     </Button>
                   </td>
-                  <td className="p-3">
+                  <td className="p-3 min-w-[300px]">
                     <div className="space-y-1">
                       <div
                         className={`font-medium ${task.is_completed ? "line-through text-muted-foreground" : "text-foreground"}`}
@@ -677,7 +698,7 @@ export default function TaskDashboard({
                         {task.title}
                       </div>
                       {task.description && task.description !== task.title && (
-                        <div className="text-sm text-muted-foreground truncate max-w-xs">{task.description}</div>
+                        <div className="text-sm text-muted-foreground break-words">{task.description}</div>
                       )}
                     </div>
                   </td>
