@@ -101,20 +101,26 @@ export default function ProjectManagement({ userId, onProjectsChange }: ProjectM
       if (error) throw error
       setProjects(data || [])
     } catch (error) {
-      console.log("[v0] Projects table not available for project management, using defaults:", error)
+      console.log("[v0] Projects table not available, using localStorage fallback:", error)
 
-      // Create default project for authenticated users when database table doesn't exist
-      const defaultProject = {
-        id: "default",
-        name: "Default List",
-        description: "General tasks and reminders",
-        color: "#10b981",
-        is_default: true,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        user_id: userId,
+      const fallbackProjects = JSON.parse(localStorage.getItem(`userProjects_${userId}`) || "[]")
+      if (fallbackProjects.length === 0) {
+        // Create default project for authenticated users when database table doesn't exist
+        const defaultProject = {
+          id: "76317b39-4a47-41ec-89fb-817a7ef7cd28",
+          name: "Default",
+          description: "General tasks and reminders",
+          color: "#10b981",
+          is_default: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          user_id: userId,
+        }
+        localStorage.setItem(`userProjects_${userId}`, JSON.stringify([defaultProject]))
+        setProjects([defaultProject])
+      } else {
+        setProjects(fallbackProjects)
       }
-      setProjects([defaultProject])
     }
   }
 
@@ -159,7 +165,9 @@ export default function ProjectManagement({ userId, onProjectsChange }: ProjectM
 
         if (editingProject) {
           const updatedProjects = guestProjects.map((p: Project) =>
-            p.id === editingProject.id ? { ...newProject, id: editingProject.id } : p,
+            p.id === editingProject.id
+              ? { ...newProject, id: editingProject.id, is_default: editingProject.is_default }
+              : p,
           )
           localStorage.setItem("guestProjects", JSON.stringify(updatedProjects))
         } else {
@@ -196,9 +204,8 @@ export default function ProjectManagement({ userId, onProjectsChange }: ProjectM
       loadProjects()
       onProjectsChange?.()
     } catch (error) {
-      console.log("[v0] Error saving project (database table may not exist):", error)
+      console.log("[v0] Database error, using localStorage fallback for project save:", error)
 
-      // For authenticated users, fall back to localStorage when database isn't available
       if (userId) {
         const fallbackProjects = JSON.parse(localStorage.getItem(`userProjects_${userId}`) || "[]")
         const newProject = {
@@ -206,7 +213,7 @@ export default function ProjectManagement({ userId, onProjectsChange }: ProjectM
           name: formData.name.trim(),
           description: formData.description.trim(),
           color: formData.color,
-          is_default: false,
+          is_default: editingProject?.is_default || false,
           created_at: editingProject?.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString(),
           user_id: userId,
@@ -215,9 +222,11 @@ export default function ProjectManagement({ userId, onProjectsChange }: ProjectM
         if (editingProject) {
           const updatedProjects = fallbackProjects.map((p: Project) => (p.id === editingProject.id ? newProject : p))
           localStorage.setItem(`userProjects_${userId}`, JSON.stringify(updatedProjects))
+          console.log("[v0] Project updated in localStorage:", newProject.name)
         } else {
           fallbackProjects.push(newProject)
           localStorage.setItem(`userProjects_${userId}`, JSON.stringify(fallbackProjects))
+          console.log("[v0] Project created in localStorage:", newProject.name)
         }
 
         setFormData({ name: "", description: "", color: "#10b981" })

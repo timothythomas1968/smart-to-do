@@ -11,9 +11,8 @@ import HelpMenu from "@/components/help-menu"
 import AuthMenu from "@/components/auth-menu"
 import LoginForm from "@/components/login-form"
 import type { Project } from "@/lib/types"
-import { CheckSquare } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { toast } from "@/hooks/use-toast"
+import WelcomeScreen from "./welcome-screen"
 
 export default function HomePage() {
   const [user, setUser] = useState<any>(null)
@@ -32,6 +31,7 @@ export default function HomePage() {
   const [isAuthLoading, setIsAuthLoading] = useState(true)
   const [authScreen, setAuthScreen] = useState<"welcome" | "signin" | "signup">("welcome")
   const [isGuestModeActive, setIsGuestModeActive] = useState(false)
+  const [isDarkMode, setIsDarkMode] = useState(false)
 
   const handleProjectsChange = () => {
     console.log("Projects have changed")
@@ -49,25 +49,10 @@ export default function HomePage() {
           return
         }
 
-        const retryGetSession = async (retries = 3) => {
-          for (let attempt = 1; attempt <= retries; attempt++) {
-            try {
-              const {
-                data: { session },
-                error,
-              } = await supabaseClient.auth.getSession()
-              return { session, error }
-            } catch (fetchError: any) {
-              console.log(`[v0] Session fetch attempt ${attempt} failed:`, fetchError.message)
-              if (attempt === retries || !fetchError.message?.includes("Failed to fetch")) {
-                throw fetchError
-              }
-              await new Promise((resolve) => setTimeout(resolve, 1000 * attempt))
-            }
-          }
-        }
-
-        const { session, error } = await retryGetSession()
+        const {
+          data: { session },
+          error,
+        } = await supabaseClient.auth.getSession()
 
         if (error) {
           console.log("[v0] Session error:", error.message)
@@ -86,58 +71,64 @@ export default function HomePage() {
         const {
           data: { subscription },
         } = supabaseClient.auth.onAuthStateChange(async (event, session) => {
-          console.log(
-            "[v0] Auth state changed:",
-            event,
-            session?.user ? `authenticated - ${session.user.email}` : "guest",
-          )
+          try {
+            console.log(
+              "[v0] Auth state changed:",
+              event,
+              session?.user ? `authenticated - ${session.user.email}` : "guest",
+            )
 
-          if (event === "TOKEN_REFRESHED" && session?.user) {
-            console.log("[v0] Token refreshed successfully")
-            setUser(session.user)
-            return
-          }
-
-          if (event === "TOKEN_REFRESH_FAILED") {
-            console.log("[v0] Token refresh failed, clearing session")
-            setUser(null)
-            setIsAuthLoading(false)
-            return
-          }
-
-          if (session?.user) {
-            console.log("[v0] Auth state user ID:", session.user.id)
-            setUser(session.user)
-            setRefreshKey((prev) => prev + 1)
-          } else if (event === "SIGNED_OUT") {
-            console.log("[v0] User signed out or session ended")
-            if (!isGuestModeActive) {
-              setUser((currentUser) => {
-                if (currentUser?.email === "guest") {
-                  console.log("[v0] Preserving guest mode user")
-                  return currentUser
-                }
-                return null
-              })
+            if (event === "SIGNED_IN" && session?.user) {
+              console.log("[v0] User successfully signed in:", session.user.email)
+              setUser(session.user)
+              setRefreshKey((prev) => prev + 1)
+              setIsAuthLoading(false)
+              return
             }
+
+            if (event === "TOKEN_REFRESHED" && session?.user) {
+              console.log("[v0] Token refreshed successfully")
+              setUser(session.user)
+              return
+            }
+
+            if (event === "SIGNED_OUT") {
+              console.log("[v0] User explicitly signed out")
+              setUser(null)
+              setIsAuthLoading(false)
+              return
+            }
+
+            if (event === "TOKEN_REFRESH_FAILED") {
+              console.log("[v0] Token refresh failed, clearing session")
+              setUser(null)
+              setIsAuthLoading(false)
+              return
+            }
+          } catch (authError: any) {
+            console.error("[v0] Auth state change error:", authError?.message || authError)
           }
         })
 
         return () => subscription.unsubscribe()
       } catch (error: any) {
         console.log("[v0] Authentication initialization error:", error)
-        if (error?.message?.includes("Failed to fetch")) {
-          console.log("[v0] Network connectivity issue during auth initialization")
-          // Still allow the app to load in a degraded state
-          setUser(null)
-        } else {
-          setUser(null)
-        }
+        setUser(null)
         setIsAuthLoading(false)
       }
     }
 
     getUser()
+
+    const savedDarkMode = localStorage.getItem("darkMode")
+    if (savedDarkMode) {
+      const darkModeEnabled = JSON.parse(savedDarkMode)
+      setIsDarkMode(darkModeEnabled)
+      if (darkModeEnabled) {
+        document.documentElement.classList.add("dark")
+        setBackgroundUrl("#000000")
+      }
+    }
 
     const savedOpacity = localStorage.getItem("foregroundOpacity")
     if (savedOpacity) {
@@ -194,7 +185,6 @@ export default function HomePage() {
           const defaultProject = data.find((p) => p.is_default) || data[0]
           setCurrentProject(defaultProject)
         } else {
-          // No projects found, create default project
           const defaultProject = {
             id: "default",
             name: "Default List",
@@ -269,7 +259,6 @@ export default function HomePage() {
         if (!supabaseClient) return
 
         try {
-          // Load from user_settings table instead of projects table
           const { data, error } = await supabaseClient
             .from("user_settings")
             .select("background_image_url, background_opacity")
@@ -394,6 +383,25 @@ export default function HomePage() {
     }
   }
 
+  const getOpacityStyle = (opacity: number) => {
+    const normalizedOpacity = Math.max(0.05, Math.min(0.95, opacity / 100))
+
+    if (isDarkMode) {
+      return {
+        backgroundColor: `rgba(45, 45, 45, ${Math.max(0.9, normalizedOpacity)})`,
+        backdropFilter: "blur(8px)",
+        border: `1px solid rgba(255, 255, 255, 0.1)`,
+        color: "#e5e7eb",
+      }
+    }
+
+    return {
+      backgroundColor: `rgba(255, 255, 255, ${normalizedOpacity})`,
+      backdropFilter: "blur(8px)",
+      border: `1px solid rgba(255, 255, 255, ${normalizedOpacity * 0.3})`,
+    }
+  }
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -467,10 +475,28 @@ export default function HomePage() {
       <div className="container mx-auto px-4 py-8 relative z-10">
         <div className="max-w-4xl mx-auto mb-6">
           <header className="text-center">
-            <div className={backgroundUrl ? "bg-white/80 backdrop-blur-sm rounded-lg p-4 border border-white/20" : ""}>
-              <h1 className="text-3xl font-bold text-foreground mb-0.5">Smart Tasks</h1>
-              <p className="text-sm text-muted-foreground/70 mb-1">an application from Theo Labs</p>
-              <p className="text-muted-foreground">
+            <div
+              className={`${backgroundUrl ? "rounded-lg p-4" : ""} ${isDarkMode ? "bg-gray-800/90 border border-gray-700" : ""}`}
+              style={
+                backgroundUrl
+                  ? getOpacityStyle(foregroundOpacity)
+                  : isDarkMode
+                    ? {
+                        backgroundColor: "rgba(45, 45, 45, 0.95)",
+                        border: "1px solid rgba(255, 255, 255, 0.1)",
+                        borderRadius: "0.5rem",
+                        padding: "1rem",
+                      }
+                    : {}
+              }
+            >
+              <h1 className={`text-3xl font-bold mb-0.5 ${isDarkMode ? "text-gray-100" : "text-foreground"}`}>
+                Smart Tasks
+              </h1>
+              <p className={`text-sm mb-1 ${isDarkMode ? "text-gray-300" : "text-muted-foreground/70"}`}>
+                an application from Theo Labs
+              </p>
+              <p className={isDarkMode ? "text-gray-200" : "text-muted-foreground"}>
                 Add tasks naturally - I'll understand dates, priorities, and assignments
               </p>
             </div>
@@ -522,6 +548,7 @@ export default function HomePage() {
             hasBackground={!!backgroundUrl}
             opacity={foregroundOpacity}
             currentProject={currentProject}
+            isDarkMode={isDarkMode}
           />
           <TaskDashboard
             userId={user?.id}
@@ -529,6 +556,7 @@ export default function HomePage() {
             hasBackground={!!backgroundUrl}
             opacity={foregroundOpacity}
             currentProject={currentProject}
+            isDarkMode={isDarkMode}
           />
         </div>
       </div>
@@ -608,77 +636,6 @@ export default function HomePage() {
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function WelcomeScreen({
-  onGuestMode,
-  onSignIn,
-  onSignUp,
-}: {
-  onGuestMode: () => void
-  onSignIn: () => void
-  onSignUp: () => void
-}) {
-  const handleGuestClick = () => {
-    console.log("[v0] Continue as Guest button clicked in WelcomeScreen")
-    try {
-      onGuestMode()
-      console.log("[v0] onGuestMode function called successfully")
-    } catch (error) {
-      console.log("[v0] Error calling onGuestMode:", error)
-    }
-  }
-
-  return (
-    <div
-      className="min-h-screen w-full flex items-center justify-center bg-cover bg-center bg-no-repeat relative"
-      style={{
-        backgroundImage: `url('/green-fields-countryside.png')`,
-      }}
-    >
-      <div className="absolute inset-0 bg-black/40"></div>
-
-      <div className="relative z-10 w-full max-w-md space-y-8 bg-black/60 backdrop-blur-sm p-8 rounded-2xl border border-white/10">
-        <div className="space-y-4 text-center">
-          <div className="flex justify-center">
-            <div className="bg-[#2b725e] p-3 rounded-xl shadow-lg">
-              <CheckSquare className="h-8 w-8 text-white" />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <h1 className="text-5xl font-bold tracking-tight text-white drop-shadow-lg">Smart Tasks</h1>
-            <p className="text-base text-gray-200 font-medium drop-shadow">from Theo Labs</p>
-            <p className="text-lg text-gray-100 mt-4 drop-shadow">Welcome! Choose how you'd like to continue</p>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <Button
-            onClick={onSignIn}
-            className="w-full bg-[#2b725e] hover:bg-[#235e4c] text-white py-6 text-lg font-medium rounded-lg h-[60px]"
-          >
-            Sign In
-          </Button>
-
-          <Button
-            onClick={onSignUp}
-            variant="outline"
-            className="w-full border-white/30 text-gray-100 hover:bg-white/10 hover:text-white bg-white/5 backdrop-blur-sm py-6 text-lg font-medium rounded-lg h-[60px]"
-          >
-            Create Account
-          </Button>
-
-          <Button
-            onClick={handleGuestClick}
-            variant="ghost"
-            className="w-full text-gray-200 hover:bg-white/10 hover:text-white py-6 text-lg font-medium rounded-lg h-[60px]"
-          >
-            Continue as Guest
-          </Button>
-        </div>
-      </div>
     </div>
   )
 }

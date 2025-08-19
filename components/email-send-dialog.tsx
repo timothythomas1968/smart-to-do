@@ -9,9 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
-import { Mail, Send, AlertCircle, CheckCircle2 } from "lucide-react"
+import { Mail, Send, AlertCircle, CheckCircle2, Users, X } from "lucide-react"
 import type { Task, EmailTemplate } from "@/lib/types"
-import { sendTaskEmail, getDefaultEmailTemplates } from "@/lib/email-service"
+import {
+  sendTaskEmail,
+  sendTaskEmailToMultiple,
+  getDefaultEmailTemplates,
+  extractEmailsFromSubject,
+  hasEmailsInSubject,
+  getSubjectWithoutEmails,
+} from "@/lib/email-service"
 
 interface EmailSendDialogProps {
   task: Task | null
@@ -21,22 +28,34 @@ interface EmailSendDialogProps {
 
 export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDialogProps) {
   const [recipientEmail, setRecipientEmail] = useState("")
+  const [additionalRecipients, setAdditionalRecipients] = useState<string[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState("")
   const [personalMessage, setPersonalMessage] = useState("")
   const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([])
   const [isSending, setIsSending] = useState(false)
   const [sendResult, setSendResult] = useState<{ success: boolean; message: string } | null>(null)
+  const [newRecipientEmail, setNewRecipientEmail] = useState("")
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && task) {
       loadEmailTemplates()
       setSendResult(null)
       setRecipientEmail("")
+      setAdditionalRecipients([])
+      setNewRecipientEmail("")
       setPersonalMessage("")
 
-      // Pre-fill recipient email if task has a subject that looks like an email
-      if (task?.subject && task.subject.includes("@")) {
-        setRecipientEmail(task.subject)
+      const subjectEmails = extractEmailsFromSubject(task.subject)
+      if (subjectEmails.length > 0) {
+        setRecipientEmail(subjectEmails[0])
+        setAdditionalRecipients(subjectEmails.slice(1))
+
+        // Auto-select delegation template if Subject has emails
+        const templates = getDefaultEmailTemplates()
+        const delegationTemplate = templates.find((t) => t.id === "template-delegation")
+        if (delegationTemplate) {
+          setSelectedTemplateId(delegationTemplate.id)
+        }
       }
     }
   }, [isOpen, task])
@@ -46,9 +65,9 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
       const savedTemplates = localStorage.getItem("emailTemplates")
       if (savedTemplates) {
         setEmailTemplates(JSON.parse(savedTemplates))
-        // Auto-select first template
+        // Auto-select first template if no delegation template was set
         const templates = JSON.parse(savedTemplates)
-        if (templates.length > 0) {
+        if (templates.length > 0 && !selectedTemplateId) {
           setSelectedTemplateId(templates[0].id)
         }
       } else {
@@ -60,7 +79,7 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
           user_id: "guest",
         }))
         setEmailTemplates(defaultTemplates)
-        if (defaultTemplates.length > 0) {
+        if (defaultTemplates.length > 0 && !selectedTemplateId) {
           setSelectedTemplateId(defaultTemplates[0].id)
         }
       }
@@ -70,6 +89,21 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
     }
   }
 
+  const addRecipient = () => {
+    if (
+      newRecipientEmail &&
+      !additionalRecipients.includes(newRecipientEmail) &&
+      newRecipientEmail !== recipientEmail
+    ) {
+      setAdditionalRecipients([...additionalRecipients, newRecipientEmail])
+      setNewRecipientEmail("")
+    }
+  }
+
+  const removeRecipient = (email: string) => {
+    setAdditionalRecipients(additionalRecipients.filter((r) => r !== email))
+  }
+
   const handleSendEmail = async () => {
     if (!task || !recipientEmail || !selectedTemplateId) return
 
@@ -77,7 +111,15 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
     setSendResult(null)
 
     try {
-      const result = await sendTaskEmail(recipientEmail, selectedTemplateId, task, personalMessage)
+      const allRecipients = [recipientEmail, ...additionalRecipients].filter(Boolean)
+
+      let result: any
+      if (allRecipients.length === 1) {
+        result = await sendTaskEmail(allRecipients[0], selectedTemplateId, task, personalMessage)
+      } else {
+        result = await sendTaskEmailToMultiple(allRecipients, selectedTemplateId, task, personalMessage)
+      }
+
       setSendResult(result)
 
       if (result.success) {
@@ -96,6 +138,7 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
   }
 
   const selectedTemplate = emailTemplates.find((t) => t.id === selectedTemplateId)
+  const allRecipients = [recipientEmail, ...additionalRecipients].filter(Boolean)
 
   if (!task) return null
 
@@ -106,6 +149,12 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
           <DialogTitle className="flex items-center gap-2">
             <Mail className="h-5 w-5" />
             Send Task via Email
+            {allRecipients.length > 1 && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                <Users className="h-3 w-3" />
+                {allRecipients.length} recipients
+              </Badge>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -122,7 +171,21 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
                     <Badge variant="outline">Due: {new Date(task.due_date).toLocaleDateString()}</Badge>
                   )}
                   {task.owner && <Badge variant="outline">Owner: {task.owner}</Badge>}
-                  {task.subject && <Badge variant="outline">Subject: {task.subject}</Badge>}
+                  {task.subject && (
+                    <Badge variant="outline">
+                      Subject:{" "}
+                      {hasEmailsInSubject(task.subject)
+                        ? getSubjectWithoutEmails(task.subject) || "Email Recipients"
+                        : task.subject}
+                    </Badge>
+                  )}
+                  {hasEmailsInSubject(task.subject) &&
+                    extractEmailsFromSubject(task.subject).map((email) => (
+                      <Badge key={email} variant="secondary" className="flex items-center gap-1">
+                        <Mail className="h-3 w-3" />
+                        {email}
+                      </Badge>
+                    ))}
                 </div>
               </div>
             </CardContent>
@@ -131,7 +194,7 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
           {/* Email Form */}
           <div className="space-y-4">
             <div>
-              <Label htmlFor="recipient">Recipient Email</Label>
+              <Label htmlFor="recipient">Primary Recipient Email</Label>
               <Input
                 id="recipient"
                 type="email"
@@ -140,6 +203,46 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
                 placeholder="Enter recipient's email address"
                 required
               />
+            </div>
+
+            <div>
+              <Label>Additional Recipients</Label>
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <Input
+                    type="email"
+                    value={newRecipientEmail}
+                    onChange={(e) => setNewRecipientEmail(e.target.value)}
+                    placeholder="Add another recipient..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault()
+                        addRecipient()
+                      }
+                    }}
+                  />
+                  <Button type="button" onClick={addRecipient} variant="outline" size="sm">
+                    Add
+                  </Button>
+                </div>
+
+                {additionalRecipients.length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {additionalRecipients.map((email) => (
+                      <Badge key={email} variant="secondary" className="flex items-center gap-1">
+                        {email}
+                        <button
+                          type="button"
+                          onClick={() => removeRecipient(email)}
+                          className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>
@@ -227,7 +330,7 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
             ) : (
               <>
                 <Send className="h-4 w-4 mr-2" />
-                Send Email
+                Send to {allRecipients.length} recipient{allRecipients.length !== 1 ? "s" : ""}
               </>
             )}
           </Button>

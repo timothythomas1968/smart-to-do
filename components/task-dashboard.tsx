@@ -28,6 +28,7 @@ import {
   CheckSquare,
   Edit,
   Mail,
+  UserCheck,
 } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import type { Task, TaskView } from "@/lib/types"
@@ -45,6 +46,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
 import { MeetingAgendaView } from "./meeting-agenda-view"
+import TaskDelegationDialog from "./task-delegation-dialog"
 
 interface TaskDashboardProps {
   tasks: Task[]
@@ -68,6 +70,14 @@ export default function TaskDashboard({
   const [viewMode, setViewMode] = useState<"list" | "table" | "calendar">("list")
   const [searchTerm, setSearchTerm] = useState("")
   const [filterPriority, setFilterPriority] = useState<string>("all")
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  useEffect(() => {
+    const savedDarkMode = localStorage.getItem("darkMode")
+    if (savedDarkMode) {
+      setIsDarkMode(JSON.parse(savedDarkMode))
+    }
+  }, [])
   const [sortBy, setSortBy] = useState<"title" | "priority" | "due_date" | "created_at">("created_at")
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc")
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set())
@@ -89,6 +99,8 @@ export default function TaskDashboard({
   const [searchQuery, setSearchQuery] = useState("")
   const [taskView, setTaskView] = useState<TaskView>("all")
   const [tasks, setTasks] = useState<Task[]>([]) // Ensure tasks is always initialized as empty array
+  const [delegationTask, setDelegationTask] = useState<Task | null>(null)
+  const [isDelegationDialogOpen, setIsDelegationDialogOpen] = useState(false)
 
   useEffect(() => {
     fetchTasks()
@@ -207,6 +219,9 @@ export default function TaskDashboard({
       case "completed":
         return allTasks.filter((task) => task.is_completed)
 
+      case "delegated":
+        return allTasks.filter((task) => task.delegation_status && task.delegation_status !== "none")
+
       case "meeting-agenda":
         return allTasks // Return all tasks for meeting agenda view to enable search functionality
 
@@ -225,6 +240,7 @@ export default function TaskDashboard({
       week: getTasksByView(safeTasks, "week").length,
       overdue: getTasksByView(safeTasks, "overdue").length,
       pending: getTasksByView(safeTasks, "pending").length,
+      delegated: getTasksByView(safeTasks, "delegated").length,
       completed: getTasksByView(safeTasks, "completed").length,
     }
   }, [tasks])
@@ -359,6 +375,48 @@ export default function TaskDashboard({
     }
   }
 
+  const getDueDateStyling = (dueDate: string | null) => {
+    if (!dueDate) return { className: "", isHighlighted: false }
+
+    const due = new Date(dueDate)
+    const today = new Date()
+    const tomorrow = new Date(today)
+    tomorrow.setDate(today.getDate() + 1)
+    const nextWeek = new Date(today)
+    nextWeek.setDate(today.getDate() + 7)
+
+    // Reset time for accurate comparison
+    today.setHours(0, 0, 0, 0)
+    due.setHours(0, 0, 0, 0)
+    tomorrow.setHours(0, 0, 0, 0)
+    nextWeek.setHours(0, 0, 0, 0)
+
+    if (due < today) {
+      // Overdue - red highlighting
+      return {
+        className: "bg-red-100 text-red-800 border-red-200 font-semibold",
+        isHighlighted: true,
+        label: "OVERDUE",
+      }
+    } else if (due.getTime() === today.getTime()) {
+      // Due today - orange highlighting
+      return {
+        className: "bg-orange-100 text-orange-800 border-orange-200 font-semibold",
+        isHighlighted: true,
+        label: "DUE TODAY",
+      }
+    } else if (due < nextWeek) {
+      // Due within a week - yellow highlighting
+      return {
+        className: "bg-yellow-100 text-yellow-800 border-yellow-200 font-medium",
+        isHighlighted: true,
+        label: "DUE SOON",
+      }
+    }
+
+    return { className: "", isHighlighted: false }
+  }
+
   const filteredAndSortedTasks = useMemo(() => {
     const safeTasks = tasks || []
     let filtered = getTasksByView(safeTasks, taskView)
@@ -447,6 +505,11 @@ export default function TaskDashboard({
     setIsEmailDialogOpen(true)
   }
 
+  const handleDelegateTask = (task: Task) => {
+    setDelegationTask(task)
+    setIsDelegationDialogOpen(true)
+  }
+
   const handleSaveTask = async (updatedTask: Task) => {
     try {
       if (!userId) {
@@ -480,13 +543,34 @@ export default function TaskDashboard({
     }
   }
 
+  const getOpacityStyle = () => {
+    if (!hasBackground) return {}
+    const normalizedOpacity = Math.max(0.05, Math.min(0.95, opacity / 100))
+
+    if (isDarkMode) {
+      return {
+        backgroundColor: `rgba(45, 45, 45, ${Math.max(0.85, normalizedOpacity)})`,
+        backdropFilter: "blur(8px)",
+        border: `1px solid rgba(255, 255, 255, 0.1)`,
+        color: "#e5e5e5",
+      }
+    }
+
+    return {
+      backgroundColor: `rgba(255, 255, 255, ${normalizedOpacity})`,
+      backdropFilter: "blur(8px)",
+      border: `1px solid rgba(255, 255, 255, ${normalizedOpacity * 0.3})`,
+    }
+  }
+
   const TaskCard = ({ task }: { task: Task }) => (
     <Card
       className={`hover:shadow-md transition-shadow ${selectedTasks.has(task.id) ? "ring-2 ring-primary" : ""} ${
-        hasBackground ? `bg-white/${opacity} backdrop-blur-sm` : ""
+        isDarkMode && hasBackground ? "dark-mode-task" : ""
       }`}
+      style={hasBackground ? getOpacityStyle() : {}}
     >
-      <CardContent className="p-3">
+      <CardContent className={`p-3 ${isDarkMode && hasBackground ? "text-gray-200" : ""}`}>
         <div className="flex items-start gap-2">
           <Checkbox
             checked={selectedTasks.has(task.id)}
@@ -518,6 +602,15 @@ export default function TaskDashboard({
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={() => handleDelegateTask(task)}
+                  className="p-0.5 h-auto hover:bg-muted"
+                  title="Delegate task"
+                >
+                  <UserCheck className="h-3 w-3" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => handleEmailTask(task)}
                   className="p-0.5 h-auto hover:bg-muted"
                   title="Send task via email"
@@ -539,6 +632,11 @@ export default function TaskDashboard({
                     <AlertTriangle className="h-3 w-3" />
                   </Badge>
                 )}
+                {task.delegation_status && task.delegation_status !== "none" && (
+                  <Badge variant="secondary" className="text-xs px-1.5 py-0.5">
+                    {task.delegation_status}
+                  </Badge>
+                )}
               </div>
             </div>
 
@@ -548,9 +646,14 @@ export default function TaskDashboard({
 
             <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
               {task.due_date && (
-                <div className="flex items-center gap-1">
+                <div
+                  className={`flex items-center gap-1 px-2 py-1 rounded-md ${getDueDateStyling(task.due_date).className}`}
+                >
                   <Calendar className="h-3 w-3" />
                   <span>{new Date(task.due_date).toLocaleDateString()}</span>
+                  {getDueDateStyling(task.due_date).isHighlighted && (
+                    <span className="text-xs font-bold ml-1">{getDueDateStyling(task.due_date).label}</span>
+                  )}
                 </div>
               )}
               {task.owner && (
@@ -563,6 +666,12 @@ export default function TaskDashboard({
                 <div className="flex items-center gap-1">
                   <Tag className="h-3 w-3" />
                   <span>{task.subject}</span>
+                </div>
+              )}
+              {task.delegated_to_email && (
+                <div className="flex items-center gap-1">
+                  <UserCheck className="h-3 w-3" />
+                  <span>Delegated to: {task.delegated_to_email}</span>
                 </div>
               )}
             </div>
@@ -712,7 +821,14 @@ export default function TaskDashboard({
                       )}
                     </div>
                   </td>
-                  <td className="p-3 text-sm">{task.due_date ? new Date(task.due_date).toLocaleDateString() : "-"}</td>
+                  <td className={`p-3 text-sm ${getDueDateStyling(task.due_date).className}`}>
+                    <div className="flex items-center gap-2">
+                      {task.due_date ? new Date(task.due_date).toLocaleDateString() : "-"}
+                      {getDueDateStyling(task.due_date).isHighlighted && (
+                        <span className="text-xs font-bold">{getDueDateStyling(task.due_date).label}</span>
+                      )}
+                    </div>
+                  </td>
                   <td className="p-3 text-sm">{task.owner || "-"}</td>
                   <td className="p-3 text-sm">{task.subject || "-"}</td>
                   <td className="p-3 text-sm">{new Date(task.created_at).toLocaleDateString()}</td>
@@ -939,10 +1055,10 @@ export default function TaskDashboard({
 
   if (isLoading) {
     return (
-      <Card className={hasBackground ? `bg-white/${opacity} backdrop-blur-sm` : ""}>
+      <Card style={hasBackground ? getOpacityStyle() : {}}>
         <CardContent className="p-8 text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4" />
-          <p className="text-muted-foreground">Loading tasks...</p>
+          <p className={isDarkMode && hasBackground ? "text-gray-300" : "text-muted-foreground"}>Loading tasks...</p>
         </CardContent>
       </Card>
     )
@@ -950,12 +1066,19 @@ export default function TaskDashboard({
 
   return (
     <>
-      <div className={`space-y-6 ${hasBackground ? `bg-white/${opacity} backdrop-blur-sm` : ""} rounded-lg p-6 border`}>
-        <Card className={hasBackground ? `bg-white/${opacity} backdrop-blur-sm` : ""}>
+      <div
+        className="space-y-6"
+        style={hasBackground ? getOpacityStyle() : {}}
+        className={hasBackground ? "rounded-lg p-6 border" : "space-y-6"}
+      >
+        <Card
+          style={hasBackground ? getOpacityStyle() : {}}
+          className={isDarkMode && hasBackground ? "dark-mode-card" : ""}
+        >
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <CardTitle className="text-card-foreground">
+                <CardTitle className={isDarkMode && hasBackground ? "text-gray-100" : "text-card-foreground"}>
                   {currentProject ? (
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-full" style={{ backgroundColor: currentProject.color }} />
@@ -1335,6 +1458,17 @@ export default function TaskDashboard({
           setEmailTask(null)
           setIsEmailDialogOpen(false)
         }}
+      />
+
+      <TaskDelegationDialog
+        task={delegationTask}
+        isOpen={isDelegationDialogOpen}
+        onClose={() => {
+          setDelegationTask(null)
+          setIsDelegationDialogOpen(false)
+        }}
+        userId={userId}
+        onDelegationComplete={refreshTasks}
       />
 
       <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>

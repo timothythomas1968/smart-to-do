@@ -20,6 +20,8 @@ export default function FileAttachmentZone({
   onAttachmentsChange,
   className = "",
 }: FileAttachmentZoneProps) {
+  const safeAttachments = Array.isArray(attachments) ? attachments : []
+
   const [isDragOver, setIsDragOver] = useState(false)
   const [isUploading, setIsUploading] = useState(false)
 
@@ -70,7 +72,7 @@ export default function FileAttachmentZone({
         newAttachments.push(attachment)
       }
 
-      onAttachmentsChange([...attachments, ...newAttachments])
+      onAttachmentsChange([...safeAttachments, ...newAttachments])
     } catch (error) {
       console.error("[v0] Error handling files:", error)
     } finally {
@@ -79,7 +81,7 @@ export default function FileAttachmentZone({
   }
 
   const removeAttachment = (id: string) => {
-    const updatedAttachments = attachments.filter((att) => att.id !== id)
+    const updatedAttachments = safeAttachments.filter((att) => att.id !== id)
     onAttachmentsChange(updatedAttachments)
   }
 
@@ -123,15 +125,15 @@ export default function FileAttachmentZone({
       <input id="file-input" type="file" multiple className="hidden" onChange={handleFileSelect} accept="*/*" />
 
       {/* Attached Files */}
-      {attachments.length > 0 && (
+      {safeAttachments.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm font-medium">
             <Paperclip className="h-4 w-4" />
-            Attachments ({attachments.length})
+            Attachments ({safeAttachments.length})
           </div>
 
           <div className="space-y-2">
-            {attachments.map((attachment) => (
+            {safeAttachments.map((attachment) => (
               <div key={attachment.id} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
                   <File className="h-4 w-4 text-muted-foreground flex-shrink-0" />

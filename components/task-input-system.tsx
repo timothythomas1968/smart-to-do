@@ -38,6 +38,14 @@ export default function TaskInputSystem({
   const [attachments, setAttachments] = useState<FileAttachment[]>([])
   const [showEmailDialog, setShowEmailDialog] = useState(false)
   const [createdTask, setCreatedTask] = useState<Task | null>(null)
+  const [isDarkMode, setIsDarkMode] = useState(false)
+
+  useEffect(() => {
+    const savedDarkMode = localStorage.getItem("darkMode")
+    if (savedDarkMode) {
+      setIsDarkMode(JSON.parse(savedDarkMode))
+    }
+  }, [])
 
   useEffect(() => {
     if (input.trim()) {
@@ -146,25 +154,41 @@ export default function TaskInputSystem({
     }
   }
 
-  const getOpacityClass = () => {
-    if (!hasBackground) return ""
-    return `bg-white/${opacity} backdrop-blur-sm`
+  const getOpacityStyle = () => {
+    if (!hasBackground) return {}
+    const normalizedOpacity = Math.max(0.05, Math.min(0.95, opacity / 100))
+    return {
+      backgroundColor: isDarkMode
+        ? `rgba(45, 45, 45, ${normalizedOpacity})`
+        : `rgba(255, 255, 255, ${normalizedOpacity})`,
+      backdropFilter: "blur(8px)",
+      border: isDarkMode
+        ? `1px solid rgba(255, 255, 255, ${normalizedOpacity * 0.2})`
+        : `1px solid rgba(255, 255, 255, ${normalizedOpacity * 0.3})`,
+    }
   }
 
   return (
     <div className="space-y-6">
       <Card
-        className={`border-2 border-dashed border-border hover:border-primary/50 transition-colors ${getOpacityClass()}`}
+        className="border-2 border-dashed border-border hover:border-primary/50 transition-colors"
+        style={hasBackground ? getOpacityStyle() : {}}
       >
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-card-foreground">
+            <CardTitle
+              className={`flex items-center gap-2 ${isDarkMode && hasBackground ? "text-gray-100" : "text-card-foreground"}`}
+            >
               <Sparkles className="h-5 w-5" />
               Add New Task
               {currentProject && (
                 <div className="flex items-center gap-2 ml-4">
                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: currentProject.color }} />
-                  <span className="text-sm text-muted-foreground">to {currentProject.name}</span>
+                  <span
+                    className={`text-sm ${isDarkMode && hasBackground ? "text-gray-300" : "text-muted-foreground"}`}
+                  >
+                    to {currentProject.name}
+                  </span>
                 </div>
               )}
               {!userId && (
@@ -183,7 +207,11 @@ export default function TaskInputSystem({
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                className="min-h-[100px] resize-none bg-input border-border focus:border-primary focus:ring-ring"
+                className={`min-h-[100px] resize-none ${
+                  isDarkMode && hasBackground
+                    ? "bg-gray-800/50 border-gray-600 text-gray-100 placeholder:text-gray-400"
+                    : "bg-input border-border focus:border-primary focus:ring-ring"
+                }`}
                 disabled={isLoading}
               />
             </div>
@@ -196,7 +224,7 @@ export default function TaskInputSystem({
           {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">{error}</div>}
 
           <div className="flex justify-between items-center">
-            <div className="text-sm text-muted-foreground">
+            <div className={`text-sm ${isDarkMode && hasBackground ? "text-gray-300" : "text-muted-foreground"}`}>
               {input.length > 0 && (
                 <span>
                   {input.length} characters • AI parsing {parsedTask ? "active" : "ready"} • Press Enter to add task
@@ -240,18 +268,26 @@ export default function TaskInputSystem({
       </Card>
 
       {parsedTask && (
-        <Card className={`border-primary/20 shadow-lg ${hasBackground ? getOpacityClass() : "bg-card"}`}>
+        <Card className="border-primary/20 shadow-lg" style={hasBackground ? getOpacityStyle() : {}}>
           <CardHeader>
-            <CardTitle className="text-card-foreground flex items-center gap-2">
+            <CardTitle
+              className={`flex items-center gap-2 ${isDarkMode && hasBackground ? "text-gray-100" : "text-card-foreground"}`}
+            >
               <Sparkles className="h-5 w-5" />
               AI Parsed Preview
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <h3 className="font-semibold text-lg text-foreground mb-2">{parsedTask.title}</h3>
+              <h3
+                className={`font-semibold text-lg mb-2 ${isDarkMode && hasBackground ? "text-gray-100" : "text-foreground"}`}
+              >
+                {parsedTask.title}
+              </h3>
               {parsedTask.description && parsedTask.description !== parsedTask.title && (
-                <p className="text-muted-foreground text-sm">{parsedTask.description}</p>
+                <p className={`text-sm ${isDarkMode && hasBackground ? "text-gray-300" : "text-muted-foreground"}`}>
+                  {parsedTask.description}
+                </p>
               )}
             </div>
 
@@ -269,22 +305,34 @@ export default function TaskInputSystem({
               </div>
 
               {parsedTask.due_date && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                <div
+                  className={`flex items-center gap-2 text-sm ${isDarkMode && hasBackground ? "text-gray-300" : ""}`}
+                >
+                  <Calendar
+                    className={`h-4 w-4 ${isDarkMode && hasBackground ? "text-gray-400" : "text-muted-foreground"}`}
+                  />
                   <span>{parsedTask.due_date.toLocaleDateString()}</span>
                 </div>
               )}
 
               {parsedTask.owner && (
-                <div className="flex items-center gap-2 text-sm">
-                  <User className="h-4 w-4 text-muted-foreground" />
+                <div
+                  className={`flex items-center gap-2 text-sm ${isDarkMode && hasBackground ? "text-gray-300" : ""}`}
+                >
+                  <User
+                    className={`h-4 w-4 ${isDarkMode && hasBackground ? "text-gray-400" : "text-muted-foreground"}`}
+                  />
                   <span>{parsedTask.owner}</span>
                 </div>
               )}
 
               {parsedTask.subject && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Tag className="h-4 w-4 text-muted-foreground" />
+                <div
+                  className={`flex items-center gap-2 text-sm ${isDarkMode && hasBackground ? "text-gray-300" : ""}`}
+                >
+                  <Tag
+                    className={`h-4 w-4 ${isDarkMode && hasBackground ? "text-gray-400" : "text-muted-foreground"}`}
+                  />
                   <span>{parsedTask.subject}</span>
                 </div>
               )}

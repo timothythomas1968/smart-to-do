@@ -13,6 +13,26 @@ export interface Task {
   user_id: string
   project_id?: string
   attachments?: FileAttachment[]
+  delegated_to_email?: string
+  delegated_by_user_id?: string
+  delegation_status?: "none" | "pending" | "accepted" | "declined"
+  delegation_message?: string
+  delegated_at?: string
+}
+
+export interface DelegatedTask {
+  id: string
+  original_task_id: string
+  delegated_to_email: string
+  delegated_by_user_id: string
+  delegated_to_user_id?: string
+  delegation_status: "pending" | "accepted" | "declined"
+  delegation_message?: string
+  delegated_at: string
+  responded_at?: string
+  created_at: string
+  updated_at: string
+  task?: Task // Populated when joining with tasks table
 }
 
 export interface UserSettings {
@@ -62,7 +82,16 @@ export interface Project {
   settings?: ProjectSettings
 }
 
-export type TaskView = "all" | "today" | "upcoming" | "week" | "overdue" | "pending" | "completed" | "meeting-agenda" // Added meeting-agenda view type
+export type TaskView =
+  | "all"
+  | "today"
+  | "upcoming"
+  | "week"
+  | "overdue"
+  | "pending"
+  | "completed"
+  | "meeting-agenda"
+  | "delegated" // Added delegated view
 
 export interface EmailTemplate {
   id: string
@@ -86,6 +115,18 @@ export interface EmailResponse {
   success: boolean
   message: string
   email_id?: string
+}
+
+export interface DelegationRequest {
+  task_id: string
+  delegated_to_email: string
+  delegation_message?: string
+}
+
+export interface DelegationResponse {
+  delegation_id: string
+  response: "accepted" | "declined"
+  response_message?: string
 }
 
 export const DEFAULT_EMAIL_TEMPLATES = [
