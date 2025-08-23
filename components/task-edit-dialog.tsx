@@ -47,7 +47,7 @@ export default function TaskEditDialog({ task, isOpen, onClose, onSave }: TaskEd
   const handleNLPParse = () => {
     if (!nlpInput.trim() || !editedTask) return
 
-    const parsed = parseTask(nlpInput)
+    const parsed = parseTask(nlpInput, editedTask.user_id || undefined)
     setEditedTask({
       ...editedTask,
       title: parsed.title,
@@ -243,3 +243,5 @@ export default function TaskEditDialog({ task, isOpen, onClose, onSave }: TaskEd
     </>
   )
 }
+
+export { TaskEditDialog }

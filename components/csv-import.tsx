@@ -74,7 +74,7 @@ export default function CSVImport({ userId, onImportComplete }: CSVImportProps) 
 
         if (taskText && taskText.length > 2) {
           try {
-            const parsed = parseTaskFromNaturalLanguage(taskText)
+            const parsed = parseTaskFromNaturalLanguage(taskText, userId)
             tasks.push({
               originalText: taskText,
               parsed,

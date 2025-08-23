@@ -53,6 +53,26 @@ const SUBJECT_PATTERNS = {
   sendTo: /\b(send|give|deliver|provide)\s+.+?\s+to\s+([\w\s]+?)(?=\s|$|,|\.|!|\?)/i,
 }
 
+function isWeekend(date: Date): boolean {
+  const day = date.getDay()
+  return day === 0 || day === 6 // Sunday = 0, Saturday = 6
+}
+
+function moveToNextMonday(date: Date): Date {
+  const nextMonday = new Date(date)
+  const day = date.getDay()
+
+  if (day === 0) {
+    // Sunday
+    nextMonday.setDate(date.getDate() + 1) // Move to Monday
+  } else if (day === 6) {
+    // Saturday
+    nextMonday.setDate(date.getDate() + 2) // Move to Monday
+  }
+
+  return nextMonday
+}
+
 function parseDate(text: string): Date | undefined {
   const now = new Date()
 
@@ -122,7 +142,12 @@ function parseDate(text: string): Date | undefined {
   if (specificDateMatch) {
     const [, month, day, year] = specificDateMatch
     const fullYear = year.length === 2 ? 2000 + Number.parseInt(year) : Number.parseInt(year)
-    return new Date(fullYear, Number.parseInt(month) - 1, Number.parseInt(day))
+    const targetDate = new Date(fullYear, Number.parseInt(month) - 1, Number.parseInt(day))
+    // Apply weekend adjustment
+    if (isWeekend(targetDate)) {
+      return moveToNextMonday(targetDate)
+    }
+    return targetDate
   }
 
   // Month and day (e.g., "August 15th")
@@ -149,6 +174,10 @@ function parseDate(text: string): Date | undefined {
       // If the date has passed this year, assume next year
       if (targetDate < now) {
         targetDate.setFullYear(now.getFullYear() + 1)
+      }
+      // Apply weekend adjustment
+      if (isWeekend(targetDate)) {
+        return moveToNextMonday(targetDate)
       }
       return targetDate
     }
@@ -189,6 +218,10 @@ function parseDate(text: string): Date | undefined {
       if (targetDate < now) {
         targetDate.setFullYear(now.getFullYear() + 1)
       }
+      // Apply weekend adjustment
+      if (isWeekend(targetDate)) {
+        return moveToNextMonday(targetDate)
+      }
       return targetDate
     }
   }
@@ -202,6 +235,10 @@ function parseDate(text: string): Date | undefined {
       const targetDate = new Date(now)
       const daysUntilTarget = (dayIndex - now.getDay() + 7) % 7 || 7
       targetDate.setDate(now.getDate() + daysUntilTarget)
+      // Apply weekend adjustment
+      if (isWeekend(targetDate)) {
+        return moveToNextMonday(targetDate)
+      }
       return targetDate
     }
   }
@@ -212,6 +249,10 @@ function parseDate(text: string): Date | undefined {
     const days = Number.parseInt(inDaysMatch[1])
     const targetDate = new Date(now)
     targetDate.setDate(now.getDate() + days)
+    // Apply weekend adjustment
+    if (isWeekend(targetDate)) {
+      return moveToNextMonday(targetDate)
+    }
     return targetDate
   }
 
@@ -221,6 +262,10 @@ function parseDate(text: string): Date | undefined {
     const weeks = Number.parseInt(inWeeksMatch[1])
     const targetDate = new Date(now)
     targetDate.setDate(now.getDate() + weeks * 7)
+    // Apply weekend adjustment
+    if (isWeekend(targetDate)) {
+      return moveToNextMonday(targetDate)
+    }
     return targetDate
   }
 
@@ -241,17 +286,18 @@ function parseUrgency(text: string): boolean {
   return URGENCY_PATTERNS.test(text)
 }
 
-function getCustomNames(): string[] {
+function getCustomNames(userId?: string): string[] {
   try {
-    const customNames = localStorage.getItem("customNames")
+    const storageKey = userId ? `customNames_${userId}` : "customNames_guest"
+    const customNames = localStorage.getItem(storageKey)
     return customNames ? JSON.parse(customNames) : []
   } catch {
     return []
   }
 }
 
-function parseOwner(text: string): string {
-  const customNames = getCustomNames()
+function parseOwner(text: string, userId?: string): string {
+  const customNames = getCustomNames(userId)
 
   console.log("[v0] Parsing owner for text:", text)
   console.log("[v0] Available custom names:", customNames)
@@ -311,8 +357,8 @@ function parseOwner(text: string): string {
   return "Me"
 }
 
-function parseSubject(text: string): string | undefined {
-  const customNames = getCustomNames()
+function parseSubject(text: string, userId?: string): string | undefined {
+  const customNames = getCustomNames(userId)
 
   // Check if any custom name appears in subject patterns
   for (const name of customNames) {
@@ -349,14 +395,14 @@ function extractTitle(text: string): string {
   return text.trim()
 }
 
-export function parseTaskFromNaturalLanguage(input: string): ParsedTask {
+export function parseTaskFromNaturalLanguage(input: string, userId?: string): ParsedTask {
   const cleanInput = input.trim()
 
   return {
     title: extractTitle(cleanInput),
     description: cleanInput, // Keep original as description
-    owner: parseOwner(cleanInput),
-    subject: parseSubject(cleanInput),
+    owner: parseOwner(cleanInput, userId),
+    subject: parseSubject(cleanInput, userId),
     due_date: parseDate(cleanInput),
     priority: parsePriority(cleanInput),
     is_urgent: parseUrgency(cleanInput),
@@ -391,3 +437,5 @@ export function formatParsedTask(parsed: ParsedTask): string {
 }
 
 export const parseTask = parseTaskFromNaturalLanguage
+
+export { isWeekend, moveToNextMonday }

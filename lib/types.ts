@@ -87,11 +87,12 @@ export type TaskView =
   | "today"
   | "upcoming"
   | "week"
+  | "calendar" // Added calendar view option
   | "overdue"
   | "pending"
   | "completed"
   | "meeting-agenda"
-  | "delegated" // Added delegated view
+  | "delegated"
 
 export interface EmailTemplate {
   id: string

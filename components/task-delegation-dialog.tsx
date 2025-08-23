@@ -66,10 +66,11 @@ export default function TaskDelegationDialog({
     onClose()
   }
 
-  // Pre-fill email if Subject contains email addresses
+  // Pre-fill email if Subject or Title contains email addresses
   const handleDialogOpen = () => {
-    if (task?.subject) {
-      const emails = extractEmailsFromSubject(task.subject)
+    if (task?.subject || task?.title) {
+      const textToCheck = task.subject || task.title || ""
+      const emails = extractEmailsFromSubject(textToCheck)
       if (emails.length > 0) {
         setDelegateToEmail(emails[0])
       }
@@ -93,7 +94,7 @@ export default function TaskDelegationDialog({
           <Card className="bg-muted/50">
             <CardContent className="p-4">
               <div className="space-y-2">
-                <h4 className="font-medium">{task.title}</h4>
+                <h4 className="font-medium">{task.title || task.subject || task.original_text || "No subject"}</h4>
                 {task.description && <p className="text-sm text-muted-foreground">{task.description}</p>}
                 <div className="flex gap-2 flex-wrap">
                   <Badge variant="outline">{task.priority}</Badge>
@@ -184,3 +185,5 @@ export default function TaskDelegationDialog({
     </Dialog>
   )
 }
+
+export { TaskDelegationDialog }

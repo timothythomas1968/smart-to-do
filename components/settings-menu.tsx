@@ -25,7 +25,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Settings,
   Palette,
-  CloudOffIcon as Opacity,
+  SpaceIcon as Opacity,
   Upload,
   Download,
   Users,
@@ -35,12 +35,14 @@ import {
   Mail,
   Moon,
   Sun,
+  Shield,
 } from "lucide-react"
 import { supabase } from "@/lib/supabase/client"
 import { parseTask } from "@/lib/nlp-parser"
 import type { ParsedTask, Project, ProjectSettings, EmailTemplate } from "@/lib/types"
 import { getDefaultEmailTemplates } from "@/lib/email-service"
 import ProjectManagement from "@/components/project-management"
+import BackupManagement from "@/components/backup-management"
 
 interface CSVTask {
   originalText: string
@@ -244,7 +246,8 @@ export default function SettingsMenu({
 
   const loadSettings = () => {
     try {
-      const savedNames = localStorage.getItem("customNames")
+      const storageKey = userId ? `customNames_${userId}` : "customNames_guest"
+      const savedNames = localStorage.getItem(storageKey)
       if (savedNames) {
         setCustomNames(JSON.parse(savedNames))
       }
@@ -457,7 +460,7 @@ export default function SettingsMenu({
       for (const item of data) {
         if (item && item["Task Description"]) {
           try {
-            const parsed = parseTask(item["Task Description"])
+            const parsed = parseTask(item["Task Description"], userId)
             parsedTasks.push({ ...parsed, ...item })
           } catch (error) {
             console.error("Error parsing task:", error)
@@ -638,7 +641,8 @@ export default function SettingsMenu({
     if (newName.trim() && !customNames.includes(newName.trim())) {
       const updatedNames = [...customNames, newName.trim()]
       setCustomNames(updatedNames)
-      localStorage.setItem("customNames", JSON.stringify(updatedNames))
+      const storageKey = userId ? `customNames_${userId}` : "customNames_guest"
+      localStorage.setItem(storageKey, JSON.stringify(updatedNames))
       setNewName("")
     }
   }
@@ -646,7 +650,8 @@ export default function SettingsMenu({
   const removeCustomName = (nameToRemove: string) => {
     const updatedNames = customNames.filter((name) => name !== nameToRemove)
     setCustomNames(updatedNames)
-    localStorage.setItem("customNames", JSON.stringify(updatedNames))
+    const storageKey = userId ? `customNames_${userId}` : "customNames_guest"
+    localStorage.setItem(storageKey, JSON.stringify(updatedNames))
   }
 
   const handleDefaultDueDaysChange = (days: number) => {
@@ -823,6 +828,24 @@ export default function SettingsMenu({
         <DropdownMenuSeparator />
 
         <ProjectManagement userId={userId} onProjectsChange={onProjectsChange} />
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground">
+            <Shield className="h-4 w-4 mr-2" />
+            Backup & Recovery
+          </DropdownMenuSubTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuSubContent className="w-[600px] max-h-[80vh] overflow-hidden" side="left" align="start">
+              <ScrollArea className="h-[70vh]">
+                <div className="p-4">
+                  <BackupManagement userId={userId} onDataRestored={onTasksChange} />
+                </div>
+              </ScrollArea>
+            </DropdownMenuSubContent>
+          </DropdownMenuPortal>
+        </DropdownMenuSub>
 
         <DropdownMenuSeparator />
 

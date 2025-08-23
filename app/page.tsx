@@ -4,7 +4,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import TaskInputSystem from "@/components/task-input-system"
-import TaskDashboard from "@/components/task-dashboard"
+import { TaskDashboard } from "@/components/task-dashboard"
 import SettingsMenu from "@/components/settings-menu"
 import ProjectSelector from "@/components/project-selector"
 import HelpMenu from "@/components/help-menu"
@@ -56,7 +56,10 @@ export default function HomePage() {
 
         if (error) {
           console.log("[v0] Session error:", error.message)
-          setUser(null)
+          if (error.message.includes("Invalid Refresh Token") || error.message.includes("refresh_token_not_found")) {
+            console.log("[v0] Clearing session due to invalid refresh token")
+            setUser(null)
+          }
         } else if (session?.user) {
           console.log("[v0] User loaded: authenticated -", session.user.email)
           console.log("[v0] User ID:", session.user.id)
@@ -100,20 +103,49 @@ export default function HomePage() {
             }
 
             if (event === "TOKEN_REFRESH_FAILED") {
-              console.log("[v0] Token refresh failed, clearing session")
+              console.log("[v0] Token refresh failed, attempting to clear session gracefully")
+              try {
+                await supabaseClient.auth.signOut()
+              } catch (signOutError) {
+                console.log("[v0] Error during graceful sign out:", signOutError)
+              }
               setUser(null)
+              setIsAuthLoading(false)
+              return
+            }
+
+            if (event === "INITIAL_SESSION") {
+              if (session?.user) {
+                console.log("[v0] Initial session found:", session.user.email)
+                setUser(session.user)
+              } else {
+                console.log("[v0] No initial session")
+                // Don't clear user here if we already have one from getSession
+                if (!user) {
+                  setUser(null)
+                }
+              }
               setIsAuthLoading(false)
               return
             }
           } catch (authError: any) {
             console.error("[v0] Auth state change error:", authError?.message || authError)
+            if (
+              authError?.message?.includes("Invalid Refresh Token") ||
+              authError?.message?.includes("refresh_token_not_found")
+            ) {
+              setUser(null)
+              setIsAuthLoading(false)
+            }
           }
         })
 
         return () => subscription.unsubscribe()
       } catch (error: any) {
         console.log("[v0] Authentication initialization error:", error)
-        setUser(null)
+        if (error?.message?.includes("Invalid Refresh Token") || error?.message?.includes("refresh_token_not_found")) {
+          setUser(null)
+        }
         setIsAuthLoading(false)
       }
     }

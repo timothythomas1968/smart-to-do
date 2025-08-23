@@ -339,3 +339,5 @@ export default function EmailSendDialog({ task, isOpen, onClose }: EmailSendDial
     </Dialog>
   )
 }
+
+export { EmailSendDialog }

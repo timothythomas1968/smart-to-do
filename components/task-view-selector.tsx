@@ -13,6 +13,7 @@ interface TaskViewSelectorProps {
     today: number
     upcoming: number
     week: number
+    calendar: number
     overdue: number
     pending: number
     completed: number
@@ -22,8 +23,9 @@ interface TaskViewSelectorProps {
 const VIEW_OPTIONS = [
   { value: "all" as TaskView, label: "All Tasks", icon: List },
   { value: "today" as TaskView, label: "Today", icon: Calendar },
-  { value: "upcoming" as TaskView, label: "Upcoming", icon: Clock }, // Added Upcoming view
+  { value: "upcoming" as TaskView, label: "Upcoming", icon: Clock },
   { value: "week" as TaskView, label: "This Week", icon: Clock },
+  { value: "calendar" as TaskView, label: "Calendar", icon: Calendar },
   { value: "overdue" as TaskView, label: "Overdue", icon: AlertTriangle },
   { value: "pending" as TaskView, label: "Pending", icon: List },
   { value: "completed" as TaskView, label: "Completed", icon: CheckCircle },

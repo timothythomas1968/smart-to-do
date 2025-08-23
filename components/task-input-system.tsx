@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { Plus, Calendar, User, Tag, AlertTriangle, Sparkles, Mail } from "lucide-react"
-import { parseTaskFromNaturalLanguage } from "@/lib/nlp-parser"
+import { parseTaskFromNaturalLanguage, isWeekend, moveToNextMonday } from "@/lib/nlp-parser"
 import { supabase } from "@/lib/supabase/client"
 import type { ParsedTask, FileAttachment, Project, Task } from "@/lib/types"
 import FileAttachmentZone from "@/components/file-attachment-zone"
@@ -39,6 +39,7 @@ export default function TaskInputSystem({
   const [showEmailDialog, setShowEmailDialog] = useState(false)
   const [createdTask, setCreatedTask] = useState<Task | null>(null)
   const [isDarkMode, setIsDarkMode] = useState(false)
+  const [weekendWarning, setWeekendWarning] = useState<string | null>(null)
 
   useEffect(() => {
     const savedDarkMode = localStorage.getItem("darkMode")
@@ -49,12 +50,22 @@ export default function TaskInputSystem({
 
   useEffect(() => {
     if (input.trim()) {
-      const parsed = parseTaskFromNaturalLanguage(input)
+      const parsed = parseTaskFromNaturalLanguage(input, userId)
       setParsedTask(parsed)
+
+      if (parsed.due_date && isWeekend(parsed.due_date)) {
+        const dayName = parsed.due_date.getDay() === 0 ? "Sunday" : "Saturday"
+        setWeekendWarning(
+          `Warning: You've selected ${dayName}, ${parsed.due_date.toLocaleDateString()}. This is a weekend day.`,
+        )
+      } else {
+        setWeekendWarning(null)
+      }
     } else {
       setParsedTask(null)
+      setWeekendWarning(null)
     }
-  }, [input])
+  }, [input, userId])
 
   const handleSubmit = async () => {
     if (!parsedTask || !input.trim()) return
@@ -68,6 +79,11 @@ export default function TaskInputSystem({
         const defaultDays = Number.parseInt(localStorage.getItem("defaultDueDays") || "5")
         finalDueDate = new Date()
         finalDueDate.setDate(finalDueDate.getDate() + defaultDays)
+
+        if (isWeekend(finalDueDate)) {
+          finalDueDate = moveToNextMonday(finalDueDate)
+          console.log("[v0] Default due date was weekend, moved to Monday:", finalDueDate.toLocaleDateString())
+        }
       }
 
       const taskData = {
@@ -222,6 +238,13 @@ export default function TaskInputSystem({
           </div>
 
           {error && <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">{error}</div>}
+
+          {weekendWarning && (
+            <div className="text-sm text-orange-600 bg-orange-50 dark:bg-orange-900/20 dark:text-orange-400 p-2 rounded flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              {weekendWarning}
+            </div>
+          )}
 
           <div className="flex justify-between items-center">
             <div className={`text-sm ${isDarkMode && hasBackground ? "text-gray-300" : "text-muted-foreground"}`}>
